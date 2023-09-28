@@ -1,0 +1,94 @@
+const request = require('request');
+const express = require('express');
+const app = express();
+const port = 3000;
+
+const { initializeApp, cert } = require('firebase-admin/app');
+const { getFirestore } = require('firebase-admin/firestore');
+const serviceAccount = require('./keymain.json');
+const bcrypt = require('bcrypt'); // Import bcrypt
+
+initializeApp({
+  credential: cert(serviceAccount)
+});
+
+const db = getFirestore();
+
+app.set("view engine", "ejs");
+app.use(express.static('public'));
+app.use(express.urlencoded({ extended: true })); // Use express.urlencoded for form data parsing
+
+app.get('/', (req, res) => {
+  res.send('Hello World!')
+});
+
+app.get('/signup', (req, res) => {
+  res.render("signup");
+});
+
+app.post('/signupsubmit', async (req, res) => { // Change to POST method
+  const Name = req.body.Name;
+  const Email = req.body.email;
+  const Password = req.body.Password;
+
+  // Check if the email is already in use
+  const emailExists = await checkEmailExists(Email);
+  if (emailExists) {
+    return res.render("signinfail"); // Render a failure page or handle it as needed
+  }
+
+  // Hash the password
+  const hashedPassword = await bcrypt.hash(Password, 10); // Salt rounds: 10
+
+  // Add user to the database (replace 'users' with your collection name)
+  db.collection('users').add({
+    Name: Name,
+    Email: Email,
+    Password: hashedPassword // Store the hashed password
+  }).then(() => {
+    res.render("signin");
+  });
+});
+
+app.get('/signin', (req, res) => {
+  res.render("signin");
+});
+
+app.get('/signinfail', (req, res) => {
+  res.render("signinfail");
+});
+
+app.post('/signinsubmit', async (req, res) => { // Change to POST method
+  const Email = req.body.email;
+  const Password = req.body.password;
+
+  // Retrieve user data by email
+  const user = await getUserByEmail(Email);
+
+  if (user && await bcrypt.compare(Password, user.Password)) {
+    res.render("Number");
+  } else {
+    res.render("signinfail");
+  }
+});
+
+// Helper function to check if an email exists
+async function checkEmailExists(email) {
+  const snapshot = await db.collection("users").where("Email", "==", email).get();
+  return !snapshot.empty;
+}
+
+// Helper function to get user data by email
+async function getUserByEmail(email) {
+  const snapshot = await db.collection("users").where("Email", "==", email).get();
+  if (!snapshot.empty) {
+    const user = snapshot.docs[0].data();
+    return user;
+  }
+  return null;
+}
+
+
+app.listen(port, () => {
+  console.log(`Example app listening on port ${port}`);
+});
